@@ -11,18 +11,18 @@ public class DecompWindow : EditorWindow
     public UnityEngine.Object[] allJsonFiles;
     public Texture2D[] allAtlasTextures;
     public string exportPath = "Assets/";
-    public bool addSubDirs = true, debugging, makeMesh;
+    public bool addSubDirs = true, makeMesh, debugging;
     public int debugMaxIterations = -1;
 
     public Vector2 scrollPos;
 
     [MenuItem("Bluey Let's Play/Decompile Atlas")]
-    public static void ShowWindow()
+    public static void ShowWindow() //creates editor window
     {
         EditorWindow.GetWindow(typeof(DecompWindow));
     }
 
-    private void OnGUI()
+    private void OnGUI() //UI content
     {
         EditorGUILayout.BeginVertical();
         scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
@@ -52,22 +52,24 @@ public class DecompWindow : EditorWindow
         GUILayout.Space(5);
 
         GUILayout.Label("Export Path:");
-        exportPath = GUILayout.TextField(exportPath);
+        exportPath = GUILayout.TextField(exportPath); //export path textbox
 
-        if (GUILayout.Button("Set Path to Selected")) {
+        if (GUILayout.Button("Set Path to Selected")) { //button to set export path to selected folder
             SetPath();
         }
 
+        //bool toggles
         addSubDirs = GUILayout.Toggle(addSubDirs, "Create Folders For Each Atlas");
         makeMesh = GUILayout.Toggle(makeMesh, "Generate Meshes");
 
         GUILayout.Space(20);
 
-        if (GUILayout.Button("Decompile"))
+        if (GUILayout.Button("Decompile")) //start decomp process
         {
             BatchDecompile();
         }
 
+        //debugging
         debugging = GUILayout.Toggle(debugging, "Debug");
         if (debugging) {
             GUILayout.Label("max iterations (-1 disables)");
@@ -78,6 +80,7 @@ public class DecompWindow : EditorWindow
         EditorGUILayout.EndVertical();
     }
 
+    //sets the export path to selected folder
     public void SetPath()
     {
         var Getpath = "";
@@ -91,6 +94,7 @@ public class DecompWindow : EditorWindow
         }
     }
 
+    //loops through each atlas and starts the decomp for them, (batch)
     public void BatchDecompile()
     {
         int i = 0;
@@ -101,7 +105,7 @@ public class DecompWindow : EditorWindow
         }
     }
 
-    public void Decompile(UnityEngine.Object atlas, Texture2D atlasTex)
+    public void Decompile(UnityEngine.Object atlas, Texture2D atlasTex) //main decomp process
     {
         string data = "";
 
@@ -115,26 +119,30 @@ public class DecompWindow : EditorWindow
         string[] dataArray = data.Split('\n');
 
 
+        //these variables manage what the 
         int i = 0, l = 0, subtexIndex = -1;
         int mode = -1;
         bool uvReady = false;
         bool counting = false;
+        bool vCount = false, iCollect = false;
+        int vIndex = 0;
+
         // _____________
         // | M O D E S | 
         // ---TEXTURE---
         //-1 = counting
-        //0 = header info (ignored)
+        //0 = header info (texture name)
         //1 = checking values
         //2 = reading uvs
-        //3 = proccess uvs
-        //4 = footer info (texture name)
+        //3 = process uvs
+        //4 = footer info (ignored)
         // ----MESH-----
         //5 = vertex data
         //6 = indicies
         // -------------
-        bool vCount = false, iCollect = false;
-        int vIndex = 0;
 
+        //atlas data is stored on instantiated gameobjects with the 'atlasOutput.cs' script, all parented under DataRoot to be easily destroyed afterward.
+        //Unless there are errors, or the user selects for meshes to be generated, they should never even know that these gameobjects are being instantiated.
         Transform root = new GameObject().transform;
         root.gameObject.name = "DataRoot";
 
@@ -148,26 +156,27 @@ public class DecompWindow : EditorWindow
 
         int iterator = debugMaxIterations;
 
+        //loops through each line of the atlas json manually as a string
         foreach (string content in dataArray)
         {
-            if(iterator == 0) { break; }
+            if(iterator == 0) { break; } //debugging
 
-            if (mode != -1 && subtexIndex != -1)
+            if (mode != -1 && subtexIndex != -1) //progress bar UI
             {
                 EditorUtility.DisplayProgressBar("Progress:", spriteNames[subtexIndex], spriteNames.Count / l);
             }
 
-            if (mode == -1 && content.Contains("_keys"))
+            if (mode == -1 && content.Contains("_keys")) //counts how many subtextures there are for this atlas
             {
                 counting = true;
                 spriteNames.Clear();
             }
-            else if(mode == -1 && counting)
+            else if(mode == -1 && counting) //finishes counting and assigns names for each subtexture declaration
             {
-                if (content.Contains("]")) {
+                if (content.Contains("]")) { //end count
                     mode = 0;
                     counting = false;
-                } else {
+                } else { //assign name
                     spriteNames.Add(content.Substring(1, content.Length - 2));
                 }
             }
@@ -189,35 +198,37 @@ public class DecompWindow : EditorWindow
 
                 Log("FOUND SUBTEXTURE NAME! <b>( "+ subarray[3] +" )</b>\n" + l);
 
-                if (makeMesh) //skip to 5 to find vertex info
+                if (makeMesh) //skip to 5 to find vertex info (if mesh gen is on)
                 {
                     mode = 5;
                 }
             }
-            else if(mode == 5 && content.Contains("Vertices")) 
+            else if(mode == 5 && content.Contains("Vertices"))  //find start to vertex info (only if generating meshes is enabled)
             {
                 Log("FOUND VERTEX INFO!\n" + l);
                 vCount = true;
             }
-            else if (mode == 5 && vCount)
+            else if (mode == 5 && vCount) //finds all vertex chunks
             {
-                if (content.Contains("]")) {
+                if (content.Contains("]")) { //end of vertex info
                     mode = 2;
                     vCount = false;
                 }
-                else {
+                else { //vertex chunk (3 floats for 1 vector3 chunk (here), 4 Vector3 chunks create a quad (mesh gen phase)
                     if (vIndex == 0) {
 
                         vIndex = 4;
                         Vector3 vertexInfo;
                         string x, y, z;
                         
+                        //trims string to just float value
                         x = dataArray[l + 1].Substring(21, dataArray[l + 1].Length - 22);
                         y = dataArray[l + 2].Substring(21, dataArray[l + 2].Length - 22);
                         z = dataArray[l + 3].Substring(21, dataArray[l + 3].Length - 21);
 
                         Log("<color=orange>VERTEX CHUNK!\n" + x + " | " + y + " | " + z + "</color>");
 
+                        //assigns float value
                         vertexInfo.x = float.Parse(x);
                         vertexInfo.y = float.Parse(y);
                         vertexInfo.z = float.Parse(z);
@@ -244,16 +255,19 @@ public class DecompWindow : EditorWindow
 
                 Vector2 chunkData = new Vector2();
 
+                //trims string to just float value
                 string x = dataArray[l + 1].Substring(21, dataArray[l + 1].Length - 22);
                 string y = dataArray[l + 2].Substring(21, dataArray[l + 2].Length - 21);
 
                 Log(x + " | " + y);
 
+                //assigns float value
                 chunkData.x = float.Parse(x);
 
                 chunkData.y = float.Parse(y);
 
                 uvs.Add(chunkData);
+                //meshUvs are different as they are cleared per submesh while textureUvs are kept as a single array
                 meshUvs.Add(chunkData);
 
                 i++;
@@ -270,35 +284,38 @@ public class DecompWindow : EditorWindow
                 i = 0;
                 mode = 3;
 
+                //move onto indices if meshgen is on
                 if (makeMesh) { mode = 6; }
                 Log("FOUND END OF UV DATA!\n" + l);
             }
-            else if(mode == 6 && content.Contains("Indices"))
+            else if(mode == 6 && content.Contains("Indices")) //start of indicies
             {
                 Log("FOUND INDICIES!\n" + l);
                 iCollect = true;
             }
-            else if (mode == 6 && iCollect)
+            else if (mode == 6 && iCollect) //find each & end of indicies
             {
-                if (content.Contains("]")) {
+                if (content.Contains("]")) { //end collection
                     iCollect = false;
                     mode = 3;
                 }
-                else {
+                else { //collect each
 
                     string fixedString = content;
                     if (content.Contains(",")) {
+                        //trim string
                         fixedString = content.Substring(0, content.Length - 1);
                     }
 
                     Log("<color=lime> LITTLE FELLA! :D \n" + fixedString + "</color>");
 
+                    //add data
                     indicies.Add(int.Parse(fixedString));
                 }
             }
-            else if(mode == 3) //process uvs & mesh
+            else if(mode == 3) //process uvs & mesh (if enabled)
             {
-                if (makeMesh)
+                if (makeMesh) //    --  MESH GENERATION --
                 {
                     GameObject rootGo = GameObject.Find(atlasTex.name);
                     if (rootGo == null)
@@ -321,8 +338,9 @@ public class DecompWindow : EditorWindow
                     mesh.RecalculateTangents();*/
                     mesh.name = atlasTex.name + "_" + textures[0].name;
                     filter.gameObject.name = textures[0].name;
-                }
+                }           //      -- END OF MESH GEN  --
 
+                //      --  TEXTURE GENERATION  --
                 int length = (uvs.Count - 1) / 4;
                 
                 for (int j = 0; j < length; j++) //for each subtexture
@@ -381,6 +399,7 @@ public class DecompWindow : EditorWindow
                         pathAppend = atlasTex.name + "/";
                     }
 
+                    //export texture to asset
                     FileStream stream = new FileStream(exportPath + pathAppend + textures[0].name + "_" + j + ".png", FileMode.OpenOrCreate, FileAccess.ReadWrite);
                     BinaryWriter writer = new BinaryWriter(stream);
                     for (int w = 0; w < tex.Length; w++)
@@ -402,11 +421,14 @@ public class DecompWindow : EditorWindow
             if (debugging) Debug.Log(i + " - " + content);
         }
 
+        //remove temporary data gameobjects
         DestroyImmediate(root.gameObject);
+        //remove progressbar
         EditorUtility.ClearProgressBar();
         //Debug.Log(data);
     }
 
+    //returns array of pixel colors for subtexture of array (TODO: FIX)
     Color[] CreateSubtex(List<Vector2> uvs, Texture2D atlas, Vector2 Dimensions, Vector2 StartPixel)
     {
         Log("CREATING SUBTEXTURE! Startpos: " + Mathf.RoundToInt(StartPixel.x * Dimensions.x) + ", " + Mathf.RoundToInt(StartPixel.y * Dimensions.y));
@@ -428,7 +450,7 @@ public class DecompWindow : EditorWindow
         return col;
     }
 
-
+    //Log debug info
     void Log(string log)
     {
         if (debugging) {
