@@ -5,4 +5,4 @@ Primarily for: "Bluey Let's Play!"
 
 -----------
 
-*Testing assets provided under: "examples/"*
+*Testing assets provided under: "Examples/"*
